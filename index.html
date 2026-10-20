@@ -24,6 +24,7 @@
     --ok:#6cc58f; --warn:#f0a64a; --err:#ff8a80; color-scheme:dark; }
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font-body)}
 .wrap{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
@@ -254,60 +255,92 @@ async function collect(group,q,need){
 }
 
 /* ---------- Claude ---------- */
-function buildPrompt(group,rows){
-  const who=group==="ja"?"日本人クリエイターの日本語VLOG":"英語圏クリエイターの英語VLOG";
-  return `あなたはYouTubeサムネイルのデザイン分析者です。以下は「${$(group==="ja"?"#qJa":"#qEn").value}」で検索した${who}のサムネイル${rows.length}枚です。各画像の直前に番号・タイトル・チャンネル名を示します。
-
-各動画を次の4類型のうち1つに分類し、要素を抽出してください。
-A ${TYPES.A.name}: ${TYPES.A.def}
-B ${TYPES.B.name}: ${TYPES.B.def}
-C ${TYPES.C.name}: ${TYPES.C.def}
-D ${TYPES.D.name}: ${TYPES.D.def}
-判定手順:
-1. まずチャンネル名・タイトル・サムネイルの人物から、運営者が芸能人・著名人か判断する。該当すれば type は "D"。確信が持てない場合はDにしない（一般のYouTuber・インフルエンサーはDではない）。
-2. Dでなければ、サムネイル画像を主、タイトルを補助としてA・B・Cから最も近いものを選ぶ。Cはサムネ内またはタイトルにギャップ/感情ワードがあることを条件とする。
-3. type に関係なく、全動画について design にサムネイルのデザインだけで見たA・B・Cのいずれかを入れる。
-
-JSONのみで回答してください（説明文やコードフェンスは不要）。形式:
-{"videos":[{"i":1,"type":"A","design":"A","celebrity":"","landmarks":["ブランデンブルク門"],"food":["ビール"],"local":["ドイツ国旗"],"person":"顔アップ","text_lang":"英語","text_size":"大","text_words":"BERLIN","flag":false,"collage":true,"tone":"低彩度","hook":""}],
-"type_traits":{"A":"このグループのA型に共通する特徴を1文","B":"...","C":"...","D":"..."},
-"insights":["このグループ全体の傾向・共通点・差別化余地を3〜5項目、各1文"]}
-
-ルール:
-- celebrity: Dの場合、どの芸能人・著名人か（例: 千原ジュニア）。D以外は ""。
-- insights では、Dの動画は知名度で視聴される点を踏まえ、サムネイルの効果を論じる際はD以外を中心に述べる。
-- landmarks: 写っている具体的な名所名（日本語表記）。なければ []。
-- food: 写っている飲食物の種類（日本語の一般名）。なければ []。
-- local: 名所・飲食物以外で、その土地・国ならではの要素（例: 国旗、地下鉄・路面電車、名物の看板やキャラクター、季節行事、特徴的な街並み）。一般的なカフェ・ホテル・人物などは含めない。なければ []。
-- person: "顔アップ" | "上半身" | "全身" | "なし" のいずれか。
-- text_lang: サムネ内の文字の言語 "日本語" | "英語" | "混在" | "その他" | "なし"。
-- text_size: 文字の目立ち度 "大" | "中" | "小" | "なし"。
-- text_words: サムネ内の主な文字を15字以内で。なければ ""。
-- flag: 国旗（絵文字含む）の有無。collage: 複数写真のコラージュか。
-- tone: "低彩度" | "中間" | "高彩度"。
-- hook: Cの根拠となるギャップ/感情ワード。なければ ""。
-- type_traits は該当本数が0の類型は "" にする。
-- 要素名は表記を統一する（例: 壁画は「イーストサイドギャラリー」）。`;
-}
-async function analyze(group,rows){
-  const content=[{type:"text",text:buildPrompt(group,rows)}];
-  rows.forEach((r,i)=>{content.push({type:"text",text:`#${i+1} タイトル: ${r.title} / チャンネル: ${r.channel}`});
-    content.push({type:"image",source:{type:"url",url:`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`}})});
+const AI_MODEL="claude-sonnet-5-5", BATCH=15;
+function typeDefs(){return TYPE_ORDER.map(k=>`${k} ${TYPES[k].name}: ${TYPES[k].def}`).join("\n")}
+async function callClaude(content,tool,maxTokens){
   const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{
     "content-type":"application/json","x-api-key":$("#anKey").value.trim(),"anthropic-version":"2023-06-01",
     "anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-5-5",max_tokens:12000,messages:[{role:"user",content}]})});
+    body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens,tools:[tool],tool_choice:{type:"tool",name:tool.name},messages:[{role:"user",content}]})});
   const j=await res.json().catch(()=>({}));
   if(!res.ok){const m=j?.error?.message||res.status;
     if(res.status===401)throw new Error("Anthropic APIキーが無効です。");
     if(/credit balance/i.test(m))throw new Error("Anthropic APIのクレジット残高が不足しています。");
+    if(res.status===429||res.status===529)throw new Error("Anthropic APIが混み合っています。少し待ってから再実行してください。");
     throw new Error("Anthropic API エラー: "+m)}
-  const txt=(j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-  const a=txt.indexOf("{"),b=txt.lastIndexOf("}");
-  if(a<0||b<0)throw new Error("AIの回答を読み取れませんでした。");
-  const data=JSON.parse(txt.slice(a,b+1));
-  for(const v of data.videos||[]){const r=rows[v.i-1];if(r)r.ai=v}
-  return {type_traits:data.type_traits||{},insights:data.insights||[]};
+  if(j.stop_reason==="max_tokens")throw new Error("AIの回答が長すぎて途中で切れました。");
+  const tu=(j.content||[]).find(b=>b.type==="tool_use");
+  if(!tu)throw new Error("AIの回答を読み取れませんでした。");
+  return tu.input;
+}
+const VIDEO_TOOL={name:"report_videos",description:"各サムネイルの分類結果を報告する",input_schema:{type:"object",required:["videos"],properties:{videos:{type:"array",items:{type:"object",required:["i","type","design","celebrity","landmarks","food","local","text_words","hook"],properties:{
+  i:{type:"integer",description:"動画番号"},
+  type:{type:"string",enum:["A","B","C","D"]},
+  design:{type:"string",enum:["A","B","C"],description:"サムネイルのデザインだけで見た類型"},
+  celebrity:{type:"string",description:"Dの場合の芸能人・著名人名。D以外は空文字"},
+  landmarks:{type:"array",items:{type:"string"},description:"写っている具体的な名所名（日本語表記、表記統一）"},
+  food:{type:"array",items:{type:"string"},description:"写っている飲食物の種類（日本語の一般名）"},
+  local:{type:"array",items:{type:"string"},description:"名所・飲食物以外の、その土地・国ならではの要素"},
+  text_words:{type:"string",description:"サムネ内の主な文字を15字以内で。なければ空文字"},
+  hook:{type:"string",description:"Cの根拠となるギャップ/感情ワード。なければ空文字"}}}}}}};
+async function analyzeBatch(group,rows,offset){
+  const who=group==="ja"?"日本人クリエイターの日本語VLOG":"英語圏クリエイターの英語VLOG";
+  const q=$(group==="ja"?"#qJa":"#qEn").value;
+  const content=[{type:"text",text:`あなたはYouTubeサムネイルのデザイン分析者です。以下は「${q}」で検索した${who}のサムネイル${rows.length}枚です。各画像の直前に番号・タイトル・チャンネル名を示します。
+
+各動画を次の4類型のうち1つに分類し、要素を抽出して report_videos ツールで全${rows.length}本分を報告してください。
+${typeDefs()}
+
+判定手順:
+1. まずチャンネル名・タイトル・サムネイルの人物から、運営者が芸能人・著名人か判断する。該当すれば type は "D"。確信が持てない場合はDにしない（一般のYouTuber・インフルエンサーはDではない）。
+2. Dでなければ、サムネイル画像を主、タイトルを補助としてA・B・Cから最も近いものを選ぶ。Cはサムネ内またはタイトルにギャップ/感情ワードがあることを条件とする。
+3. type に関係なく、全動画について design にサムネイルのデザインだけで見たA・B・Cを入れる。
+
+要素抽出のルール:
+- landmarks: 写っている具体的な名所名（日本語表記）。表記を統一する（例: 壁画は「イーストサイドギャラリー」）。
+- food: 写っている飲食物の種類（日本語の一般名、例: ビール、ソーセージ、ケバブ）。
+- local: 名所・飲食物以外で、その土地・国ならではの要素（例: 国旗、地下鉄・路面電車、名物の看板やキャラクター、季節行事、特徴的な街並み）。一般的なカフェ・ホテル・人物などは含めない。
+- 該当がなければ空配列。`}];
+  rows.forEach((r,i)=>{content.push({type:"text",text:`#${offset+i+1} タイトル: ${r.title} / チャンネル: ${r.channel}`});
+    content.push({type:"image",source:{type:"url",url:`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`}})});
+  const out=await callClaude(content,VIDEO_TOOL,6000);
+  let n=0;
+  for(const v of out.videos||[]){const r=rows[(+v.i)-offset-1];if(r){r.ai=v;n++}}
+  return n;
+}
+const SUMMARY_TOOL={name:"report_summary",description:"グループ全体の傾向を報告する",input_schema:{type:"object",required:["type_traits","insights"],properties:{
+  type_traits:{type:"object",properties:{A:{type:"string"},B:{type:"string"},C:{type:"string"},D:{type:"string"}},description:"各類型に共通する特徴を1文ずつ。該当0本の類型は空文字"},
+  insights:{type:"array",items:{type:"string"},description:"グループ全体の傾向・共通点・差別化余地を3〜5項目、各1文"}}}};
+async function summarize(group,rows){
+  const who=group==="ja"?"日本人クリエイターの日本語VLOG":"英語圏クリエイターの英語VLOG";
+  const data=rows.filter(r=>r.ai).map(r=>({順位:r.rank,類型:r.ai.type,タイトル:r.title,チャンネル:r.channel,登録者数:r.subs,視聴回数:r.views,視聴登録比:ratio(r)?+ratio(r).toFixed(2):null,名所:r.ai.landmarks,飲食物:r.ai.food,地域要素:r.ai.local,サムネ文字:r.ai.text_words,フック:r.ai.hook,芸能人:r.ai.celebrity}));
+  const text=`以下は「${$(group==="ja"?"#qJa":"#qEn").value}」で検索した${who}${data.length}本のサムネイル分類結果です。
+類型の定義:
+${typeDefs()}
+
+report_summary ツールで、各類型の共通する特徴（type_traits）と、グループ全体の所見（insights）を報告してください。
+- 所見は数値（視聴回数・視聴登録比）の根拠を添える。
+- Dの動画は知名度で視聴されるため、サムネイルの効果を論じる際はD以外を中心に述べる。
+- 推測は推測と分かる表現にする。
+
+データ:
+${JSON.stringify(data)}`;
+  return await callClaude([{type:"text",text}],SUMMARY_TOOL,3000);
+}
+async function analyze(group,rows){
+  rows.forEach(r=>delete r.ai);
+  const total=Math.ceil(rows.length/BATCH);let failed=0;
+  for(let b=0;b<total;b++){
+    const slice=rows.slice(b*BATCH,(b+1)*BATCH);
+    log(`  ${b+1}/${total} 分析中（#${b*BATCH+1}〜#${b*BATCH+slice.length}）…`);
+    try{const n=await analyzeBatch(group,slice,b*BATCH);if(n<slice.length)log(`    ${slice.length-n}本の結果が欠けています。`,"e")}
+    catch(e){failed++;log("    "+e.message,"e")}
+    render();
+  }
+  if(!rows.some(r=>r.ai))throw new Error("分類結果を取得できませんでした。");
+  log("  全体の傾向をまとめています…");
+  try{return await summarize(group,rows)}
+  catch(e){log("    所見の作成に失敗: "+e.message,"e");return {type_traits:{},insights:[]}}
 }
 
 /* ---------- run ---------- */
@@ -331,7 +364,7 @@ $("#run").addEventListener("click",async()=>{
     if(useAI){
       for(const g of ["ja","en"]){
         const rows=state.groups[g].rows;if(!rows.length)continue;
-        log(`${g==="ja"?"①":"②"} サムネイルをAIで分析中…（1〜2分）`);
+        log(`${g==="ja"?"①":"②"} サムネイルをAIで分析中…（${Math.ceil(rows.length/BATCH)}回に分けて実行、1回30秒〜1分）`);
         try{state.groups[g].ai=await analyze(g,rows);log("  完了","o")}
         catch(e){log("  "+e.message,"e")}
         render();
@@ -469,10 +502,10 @@ function barBlock(title,list,N,limit){
 function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 function slug(){return(state.qEn||state.qJa).replace(/[^\w]+/g,"_").replace(/^_|_$/g,"")+"_"+state.created.slice(0,10)}
 $("#csv").addEventListener("click",()=>{
-  const head=["グループ","順位","タイトル","チャンネル","国","登録者数","視聴回数","視聴÷登録","公開日","長さ(秒)","類型","デザイン類型","芸能人","名所","飲食物","その他地域要素","人物","文字言語","文字","フック","URL"];
+  const head=["グループ","順位","タイトル","チャンネル","国","登録者数","視聴回数","視聴÷登録","公開日","長さ(秒)","類型","デザイン類型","芸能人","名所","飲食物","その他地域要素","サムネ内の文字","フック","URL"];
   const lines=[head];
   for(const g of ["ja","en"])for(const r of state.groups[g]?.rows||[]){const a=r.ai||{};
-    lines.push([g==="ja"?"日本語":"英語",r.rank,r.title,r.channel,r.country,r.subs??"",r.views,ratio(r)?.toFixed(3)??"",r.published,r.dur,a.type||"",a.design||"",a.celebrity||"",(a.landmarks||[]).join("/"),(a.food||[]).join("/"),(a.local||[]).join("/"),a.person||"",a.text_lang||"",a.text_words||"",a.hook||"","https://www.youtube.com/watch?v="+r.id])}
+    lines.push([g==="ja"?"日本語":"英語",r.rank,r.title,r.channel,r.country,r.subs??"",r.views,ratio(r)?.toFixed(3)??"",r.published,r.dur,a.type||"",a.design||"",a.celebrity||"",(a.landmarks||[]).join("/"),(a.food||[]).join("/"),(a.local||[]).join("/"),a.text_words||"",a.hook||"","https://www.youtube.com/watch?v="+r.id])}
   const csv="﻿"+lines.map(l=>l.map(x=>{x=String(x);return/[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(",")).join("\n");
   download("thumbnail_"+slug()+".csv",csv,"text/csv");
 });
