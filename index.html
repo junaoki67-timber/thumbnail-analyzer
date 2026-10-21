@@ -5,161 +5,158 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VLOGサムネイル分析</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
-/* Layout: 設定と検索条件を上段、結果は日本／英語圏の2タブ。各タブは「要約 → 類型 → 共通要素 → 動画一覧」の順 */
+/* Layout: 上部1行のヘッダー（条件の要約と「条件を変更」）→ 左に絞り込み、右に大きなサムネイルのギャラリー */
 :root{
-  --bg:#f3f4f6; --panel:#ffffff; --ink:#16181d; --muted:#5f6674; --line:#dde0e6;
-  --accent:#1f4fd1; --accent-ink:#ffffff;
-  --tA:#3c6e8f; --tB:#c7781a; --tC:#b0306a; --tD:#6a4cb0;
-  --ok:#2f7d4f; --warn:#a35b00; --err:#b3261e;
-  --font-display:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
-  --font-body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --bg:#0b0b0c; --panel:#151517; --line:#222226; --line2:#2a2a2f;
+  --ink:#ededee; --sub:#b4b4ba; --muted:#8e8e95;
+  --tA:#6aa6d6; --tB:#e0a046; --tC:#e0709f; --tD:#a58cf0;
+  --ok:#6cc58f; --err:#ff8a80;
+  --font-body:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;
   --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-  color-scheme:light;
-}
-@media (prefers-color-scheme: dark){
-  :root{ --bg:#111317; --panel:#1a1d23; --ink:#e8eaee; --muted:#9aa1ae; --line:#2c313a;
-    --accent:#7ea2ff; --accent-ink:#0d1220; --tA:#7fb1d1; --tB:#f0a64a; --tC:#e86fa5; --tD:#a98cf0;
-    --ok:#6cc58f; --warn:#f0a64a; --err:#ff8a80; color-scheme:dark; }
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font-body)}
-.wrap{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
-header h1{font:900 26px/1.2 var(--font-display);margin:0;letter-spacing:.01em}
-header p{margin:4px 0 0;color:var(--muted);font-size:13px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
-.panel h2{font:700 15px/1.3 var(--font-display);margin:0 0 12px}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-label{display:grid;gap:4px;font-size:12px;color:var(--muted);letter-spacing:.03em}
-input[type=text],input[type=password],input[type=number]{font:14px var(--font-body);padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%;min-width:0}
-input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 var(--font-body)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+
+.top{border-bottom:1px solid var(--line);padding:14px max(16px,env(safe-area-inset-right,0px)) 14px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center}
+.top h1{margin:0 auto 0 0;font-size:16px;font-weight:700;letter-spacing:.02em}
+#critLine{font-size:12px;color:var(--muted)}
+.btn{background:none;border:1px solid var(--line2);border-radius:6px;padding:7px 14px;min-height:36px;font-size:13px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.wrap{max-width:1320px;margin:0 auto;padding:24px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px))}
+.settings{border-bottom:1px solid var(--line);background:var(--panel)}
+.settings .wrap{padding-block:20px;display:grid;gap:14px}
+.fields{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+label.f{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+label.f input,label.f select{background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--ink);width:100%;min-width:0}
 .row{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
-.check{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink);letter-spacing:0}
-button{font:700 14px var(--font-body);border-radius:6px;padding:9px 16px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
-button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-button:disabled{opacity:.5;cursor:not-allowed}
-details summary{cursor:pointer;font:700 15px var(--font-display)}
+.check{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}
+details.keys summary{cursor:pointer;font-size:13px;color:var(--sub)}
+details.keys .fields{margin-top:10px}
 .note{font-size:12px;color:var(--muted)}
-#log{font:12px/1.7 var(--font-mono);color:var(--muted);white-space:pre-wrap;max-height:160px;overflow:auto;margin:0}
+#log{font:12px/1.7 var(--font-mono);color:var(--muted);white-space:pre-wrap;max-height:150px;overflow:auto;margin:0}
+#log:empty{display:none}
 #log .e{color:var(--err)} #log .o{color:var(--ok)}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
-.tab{border:none;border-bottom:3px solid transparent;border-radius:0;background:none;padding:10px 14px;color:var(--muted)}
-.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
-.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-.stat{border-left:3px solid var(--line);padding:2px 12px}
-.stat b{display:block;font:600 20px var(--font-mono);font-variant-numeric:tabular-nums}
-.stat span{font-size:12px;color:var(--muted)}
-.types{display:grid;gap:16px}
-.type{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;padding:14px 16px;display:grid;gap:10px}
-.type-head{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:baseline;justify-content:space-between}
-.type h3{margin:0;font:700 17px var(--font-display)}
-.type h3 .pill{margin-right:6px;vertical-align:2px}
-.type p{margin:0;font-size:13px}
-.kv{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;margin:0}
-.kv div{display:flex;gap:6px} .kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
-.thumbs{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-.thumb{position:relative;display:block;border-radius:6px;overflow:hidden;background:var(--bg);color:#fff;text-decoration:none}
-.thumb img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
-.thumb .ov{position:absolute;left:0;right:0;bottom:0;padding:16px 8px 5px;font:600 11px var(--font-mono);background:linear-gradient(transparent,rgba(0,0,0,.78));display:flex;justify-content:space-between;gap:6px}
-.thumb .rk{position:absolute;top:5px;left:5px;font:700 11px var(--font-mono);background:rgba(0,0,0,.7);border-radius:4px;padding:1px 6px}
-.thumb .tp{position:absolute;top:5px;right:5px}
-.elem-sec{display:grid;gap:12px}
-.elem-sec h3{margin:6px 0 0;font:700 15px var(--font-display);color:var(--muted);letter-spacing:.04em}
-.elem{display:grid;gap:8px;padding-bottom:14px;border-bottom:1px solid var(--line)}
-.elem-head{display:flex;flex-wrap:wrap;gap:4px 20px;align-items:baseline;justify-content:space-between}
-.elem-head b{font:700 16px var(--font-display)}
-.thumb:hover img,.card a.img:hover img{opacity:.88}
-.cards{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
-@media (max-width:1100px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:760px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:460px){.cards{grid-template-columns:1fr}}
-.card{display:grid;gap:6px;align-content:start;min-width:0}
-.card a.img{position:relative;display:block;border-radius:8px;overflow:hidden;background:var(--bg)}
+.linkbtn{justify-self:start;background:none;border:none;padding:0;color:var(--sub);text-decoration:underline;cursor:pointer;font-size:13px}
+
+#emptyState{color:var(--muted);display:grid;gap:8px;max-width:720px}
+#emptyState strong{color:var(--ink)}
+#emptyState ol{margin:0;padding-left:1.4em}
+
+.layout{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+aside{flex:1 1 220px;max-width:250px;display:grid;gap:22px;font-size:13px}
+@media (max-width:760px){aside{max-width:none}}
+.fh{font-size:11px;letter-spacing:.08em;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.seg{display:flex;background:var(--panel);border-radius:8px;padding:3px}
+.seg button{flex:1;background:none;border:none;border-radius:6px;padding:7px 0;min-height:36px;color:var(--muted);cursor:pointer;font-size:13px}
+.seg button[aria-pressed=true]{background:var(--line2);color:var(--ink);font-weight:700}
+.tline{display:flex;align-items:center;gap:8px;min-height:30px;cursor:pointer}
+.tline input{accent-color:var(--ink);margin:0}
+.tline .dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.tline .nm{flex:1}
+.tline .n{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.tline.off{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:none;border:1px solid var(--line2);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--sub);cursor:pointer}
+.chip .n{font-family:var(--font-mono);opacity:.7;margin-left:4px}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip:hover{border-color:var(--muted)}
+
+main{flex:999 1 640px;min-width:0;display:grid;gap:16px;align-content:start}
+.mhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 26px;font-size:12px;color:var(--muted)}
+.mhead h2{margin:0;font-size:16px;color:var(--ink);font-weight:700}
+.mhead b{font-family:var(--font-mono);font-size:15px;color:var(--ink);font-weight:700;margin-left:4px}
+.mhead select{margin-left:6px;background:var(--panel);border:1px solid var(--line2);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--ink)}
+.mhead .sort{margin-left:auto}
+.ins{padding:12px 16px;background:var(--panel);border-radius:8px;font-size:13px;color:#cfcfd4;line-height:1.7}
+.ins ul{margin:0;padding-left:1.1em;display:grid;gap:4px}
+.ins .lbl{font-size:11px;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.ins details summary{cursor:pointer;color:var(--sub);font-size:12px;margin-top:6px}
+
+.grid{display:grid;gap:20px 14px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.grid{grid-template-columns:1fr}}
+.card{display:grid;gap:6px;min-width:0;align-content:start}
+.card a.img{position:relative;display:block;border-radius:8px;overflow:hidden;background:var(--panel)}
 .card a.img img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
-.card .rk{position:absolute;top:6px;left:6px;font:700 12px var(--font-mono);color:#fff;background:rgba(0,0,0,.72);border-radius:4px;padding:1px 7px}
-.card .tp{position:absolute;top:6px;right:6px}
-.card .du{position:absolute;bottom:6px;right:6px;font:600 11px var(--font-mono);color:#fff;background:rgba(0,0,0,.72);border-radius:4px;padding:1px 5px}
-.card .tt{font:700 13px/1.45 var(--font-body);color:var(--ink);text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card a.img:hover img{opacity:.88}
+.card .rk{position:absolute;top:8px;left:8px;font:700 11px var(--font-mono);color:#fff;background:rgba(0,0,0,.7);border-radius:4px;padding:1px 6px}
+.card .tp{position:absolute;top:8px;right:8px;font:700 11px var(--font-mono);color:#0b0b0c;background:var(--c);border-radius:4px;padding:1px 6px}
+.card .du{position:absolute;bottom:8px;right:8px;font:600 11px var(--font-mono);color:#fff;background:rgba(0,0,0,.7);border-radius:4px;padding:1px 5px}
+.card .tt{font-size:13px;line-height:1.45;color:var(--ink);text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card .tt:hover{text-decoration:underline}
-.card .nums{display:flex;flex-wrap:wrap;gap:2px 12px;font:12px var(--font-mono);font-variant-numeric:tabular-nums}
-.card .nums span{color:var(--muted)} .card .nums b{font-weight:600;color:var(--ink)}
-.listhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
-select{font:13px var(--font-body);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
-.bars{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-.bars h4{margin:0 0 6px;font:700 13px var(--font-display)}
-.bar{display:grid;grid-template-columns:minmax(0,9em) 1fr 3.2em;gap:8px;align-items:center;font-size:12px;margin:3px 0}
-.bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar .trk{height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
-.bar .fill{height:100%;background:var(--accent)}
-.bar .n{font-family:var(--font-mono);text-align:right;color:var(--muted)}
-ul.ins{margin:0;padding-left:1.2em;display:grid;gap:4px}
-.ch{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pill{display:inline-block;font:700 12px var(--font-mono);color:#fff;background:var(--c);border-radius:4px;padding:1px 7px}
-.el{font-size:11px;color:var(--muted);margin-top:4px}
-.empty{color:var(--muted);font-size:14px;display:grid;gap:8px}
-.empty ol{margin:0;padding-left:1.4em}
-.section{display:grid;gap:14px}
+.card .meta{display:flex;flex-wrap:wrap;gap:2px 14px;font:12px var(--font-mono);color:var(--muted)}
+.card .meta b{color:var(--ink);font-weight:500}
+.card .ch{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .tags{font-size:11px;color:var(--muted)}
+.none{color:var(--muted);padding:40px 0}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>VLOGサムネイル分析</h1>
-    <p>YouTube検索上位の日本語VLOGと英語VLOGを取得し、サムネイルを4類型（A おしゃれ系／B バラエティ系／C 意外性フック系／D 芸能人・著名人）で分類します。</p>
-  </header>
+<header class="top">
+  <h1>VLOGサムネイル分析</h1>
+  <span id="critLine"></span>
+  <button class="btn" id="toggleSettings" aria-expanded="true" aria-controls="settings">条件を変更</button>
+</header>
 
-  <details class="panel" id="keysPanel">
-    <summary>APIキー設定</summary>
-    <div class="grid" style="margin-top:12px">
-      <label for="ytKey">YouTube Data API v3 キー（必須）<input type="password" id="ytKey" autocomplete="off" placeholder="AIza..."></label>
-      <label for="anKey">Anthropic API キー（AI分析に必要）<input type="password" id="anKey" autocomplete="off" placeholder="sk-ant-..."></label>
+<section class="settings" id="settings">
+  <div class="wrap">
+    <div class="fields">
+      <label class="f" for="qJa">① 日本語キーワード<input type="text" id="qJa" value="ベルリン vlog"></label>
+      <label class="f" for="qEn">② 英語キーワード<input type="text" id="qEn" value="Berlin vlog"></label>
+      <label class="f" for="count">各グループの件数<input type="number" id="count" value="30" min="5" max="50"></label>
+      <label class="f" for="order">動画の選び方<select id="order"><option value="viewCount" selected>視聴回数の多い順</option><option value="relevance">関連度順（YouTube検索の表示に近い）</option></select></label>
+      <label class="f" for="period">公開時期<select id="period"><option value="">全期間</option><option value="1">直近1年</option><option value="3" selected>直近3年</option><option value="5">直近5年</option></select></label>
     </div>
-    <div class="row" style="margin-top:10px">
-      <label class="check" for="saveKeys"><input type="checkbox" id="saveKeys"> このPCのブラウザに保存する</label>
-      <span class="note">キーはこのファイルを開いたブラウザ内にのみ保存され、YouTubeとAnthropic以外には送信されません。</span>
+    <div class="row">
+      <label class="check" for="noShorts"><input type="checkbox" id="noShorts" checked> 3分以下の動画を除外</label>
+      <label class="check" for="useAI"><input type="checkbox" id="useAI" checked> AIで類型・要素を分析</label>
     </div>
-  </details>
-
-  <section class="panel">
-    <h2>検索条件</h2>
-    <div class="grid">
-      <label for="qJa">① 日本語キーワード<input type="text" id="qJa" value="ベルリン vlog"></label>
-      <label for="qEn">② 英語キーワード<input type="text" id="qEn" value="Berlin vlog"></label>
-      <label for="count">各グループの件数<input type="number" id="count" value="30" min="5" max="50"></label>
+    <div class="row">
+      <button class="btn primary" id="run">分析を実行</button>
+      <button class="btn" id="csv" disabled>CSVで保存</button>
+      <button class="btn" id="saveJson" disabled>結果を保存</button>
+      <label class="linkbtn" for="loadJson">保存した結果を開く<input type="file" id="loadJson" accept="application/json" hidden></label>
     </div>
-    <div class="row" style="margin-top:12px">
-      <label class="check" for="noShorts"><input type="checkbox" id="noShorts" checked> 3分以下の動画（ショート等）を除外</label>
-      <label class="check" for="useAI"><input type="checkbox" id="useAI" checked> AIで類型化・共通要素を抽出</label>
-    </div>
-    <div class="row" style="margin-top:14px">
-      <button class="primary" id="run">分析を実行</button>
-      <button id="csv" disabled>CSVで保存</button>
-      <button id="saveJson" disabled>結果を保存</button>
-      <label class="check" for="loadJson" style="cursor:pointer"><span style="text-decoration:underline">保存した結果を開く</span><input type="file" id="loadJson" accept="application/json" hidden></label>
-    </div>
-    <pre id="log" style="margin-top:12px"></pre>
-  </section>
-
-  <section class="panel" id="results">
-    <div class="empty" id="emptyState">
-      <strong>まだ結果がありません。</strong>
-      <ol>
-        <li>「APIキー設定」を開き、YouTube Data API キーを入力します（AI分析を使う場合はAnthropic APIキーも）。</li>
-        <li>キーワードを入力して「分析を実行」を押します。1回で約1〜3分かかります。</li>
-        <li>結果は「結果を保存」でJSONとして残し、後で「保存した結果を開く」から再表示できます。</li>
-      </ol>
-    </div>
-    <div id="resultBody" hidden>
-      <div class="tabs" role="tablist">
-        <button class="tab" role="tab" id="tab-ja" aria-selected="true" data-g="ja">① 日本語VLOG</button>
-        <button class="tab" role="tab" id="tab-en" aria-selected="false" data-g="en">② 英語VLOG</button>
+    <details class="keys" id="keysPanel">
+      <summary>APIキー設定</summary>
+      <div class="fields">
+        <label class="f" for="ytKey">YouTube Data API v3 キー（必須）<input type="password" id="ytKey" autocomplete="off" placeholder="AIza..."></label>
+        <label class="f" for="anKey">Anthropic API キー（AI分析に必要）<input type="password" id="anKey" autocomplete="off" placeholder="sk-ant-..."></label>
       </div>
-      <div id="groupView" class="section" style="margin-top:16px"></div>
-    </div>
-  </section>
+      <div class="row" style="margin-top:8px">
+        <label class="check" for="saveKeys"><input type="checkbox" id="saveKeys"> このPCのブラウザに保存する</label>
+        <span class="note">キーはこのブラウザ内にのみ保存され、YouTubeとAnthropic以外には送信されません。</span>
+      </div>
+    </details>
+    <pre id="log"></pre>
+  </div>
+</section>
+
+<div class="wrap">
+  <div id="emptyState">
+    <strong>まだ結果がありません。</strong>
+    <ol>
+      <li>「APIキー設定」を開き、YouTube Data API キーとAnthropic APIキーを入力します。</li>
+      <li>キーワードを入力して「分析を実行」を押します。30本で約3〜5分、50本で約5〜8分かかります。</li>
+      <li>結果は「結果を保存」でJSONとして残し、後で「保存した結果を開く」から再表示できます。</li>
+    </ol>
+  </div>
+  <div class="layout" id="resultBody" hidden>
+    <aside id="filters" aria-label="絞り込み"></aside>
+    <main id="gallery"></main>
+  </div>
 </div>
 
 <script>
@@ -174,7 +171,7 @@ const TYPES={
 const TYPE_ORDER=["A","B","C","D"];
 const KANA=/[぀-ヿ]/;
 const NON_LATIN=/[぀-ヿ㐀-鿿가-힯Ѐ-ӿ؀-ۿ฀-๿ऀ-ॿ]/;
-let state=null, curGroup="ja", sortKey={ja:"rank",en:"rank"};
+let state=null;
 
 /* ---------- keys ---------- */
 function store(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
@@ -225,6 +222,9 @@ function accept(group,v,ch){
 }
 async function collect(group,q,need){
   const cfg=group==="ja"?{regionCode:"JP",relevanceLanguage:"ja"}:{regionCode:"US",relevanceLanguage:"en"};
+  cfg.order=$("#order").value;
+  const yrs=+$("#period").value;
+  if(yrs){const d=new Date();d.setFullYear(d.getFullYear()-yrs);cfg.publishedAfter=d.toISOString().replace(/\.\d+Z$/,"Z")}
   const out=[],seen=new Set();let token="",page=0;
   while(out.length<need&&page<4){
     page++;
@@ -304,7 +304,7 @@ ${typeDefs()}
 - 該当がなければ空配列。`}];
   rows.forEach((r,i)=>{content.push({type:"text",text:`#${offset+i+1} タイトル: ${r.title} / チャンネル: ${r.channel}`});
     content.push({type:"image",source:{type:"url",url:`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`}})});
-  const out=await callClaude(content,VIDEO_SCHEMA,6000);
+  const out=await callClaude(content,VIDEO_SCHEMA,16000);
   let n=0;
   for(const v of out.videos||[]){const r=rows[(+v.i)-offset-1];if(r){r.ai=v;n++}}
   return n;
@@ -326,7 +326,7 @@ JSONで、各類型の共通する特徴（type_traits）と、グループ全�
 
 データ:
 ${JSON.stringify(data)}`;
-  return await callClaude([{type:"text",text}],SUMMARY_SCHEMA,3000);
+  return await callClaude([{type:"text",text}],SUMMARY_SCHEMA,16000);
 }
 async function analyze(group,rows){
   rows.forEach(r=>delete r.ai);
@@ -352,16 +352,17 @@ $("#run").addEventListener("click",async()=>{
   persistKeys();
   const need=Math.max(5,Math.min(50,+$("#count").value||30));
   $("#run").disabled=true;$("#log").textContent="";
-  const next={created:new Date().toISOString(),qJa:$("#qJa").value.trim(),qEn:$("#qEn").value.trim(),groups:{}};
+  const next={created:new Date().toISOString(),qJa:$("#qJa").value.trim(),qEn:$("#qEn").value.trim(),order:$("#order").value,period:$("#period").value,groups:{}};
   try{
     for(const g of ["ja","en"]){
       const q=g==="ja"?next.qJa:next.qEn;
       log(`${g==="ja"?"①":"②"}「${q}」を検索中…`);
       const rows=await collect(g,q,need);
+      if(next.order==="viewCount"){rows.sort((a,b)=>b.views-a.views);rows.forEach((r,i)=>r.rank=i+1)}
       next.groups[g]={rows,ai:null};
       if(rows.length<need)log(`  条件に合う動画が${rows.length}本しか見つかりませんでした。`,"e");
     }
-    state=next;render();
+    state=next;resetFilters();F.group="ja";render();
     if(useAI){
       for(const g of ["ja","en"]){
         const rows=state.groups[g].rows;if(!rows.length)continue;
@@ -372,132 +373,131 @@ $("#run").addEventListener("click",async()=>{
       }
     }
     log("完了しました。","o");
+    if(state){$("#settings").hidden=true;$("#toggleSettings").setAttribute("aria-expanded","false")}
   }catch(e){log(e.message,"e")}
   finally{$("#run").disabled=false}
 });
 
-/* ---------- render ---------- */
-document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{curGroup=t.dataset.g;render()}));
+/* ---------- view ---------- */
+const F={group:"ja",types:new Set(TYPE_ORDER),elems:new Map(),sort:"views"};
+const ELEM_CATS=[["名所","landmarks"],["飲食物","food"],["地域要素","local"]];
+const ekey=(cat,name)=>cat+"\u0001"+name;
+function resetFilters(){F.types=new Set(TYPE_ORDER);F.elems=new Map()}
+$("#toggleSettings").addEventListener("click",()=>{const s=$("#settings");s.hidden=!s.hidden;$("#toggleSettings").setAttribute("aria-expanded",String(!s.hidden))});
+function hasAI(G){return G.rows.some(r=>r.ai)}
+function matchElems(r){for(const [k,[cat,name]] of F.elems){if(!(r.ai?.[cat]||[]).includes(name))return false}return true}
+function matchTypes(r){return !r.ai||F.types.has(r.ai.type)}
 function render(){
   const has=!!state;$("#emptyState").hidden=has;$("#resultBody").hidden=!has;
-  $("#csv").disabled=!has;$("#saveJson").disabled=!has;if(!has)return;
-  document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected",String(t.dataset.g===curGroup)));
-  const G=state.groups[curGroup];const v=$("#groupView");v.replaceChildren();
-  if(!G||!G.rows.length){v.append(el("p",{class:"note"},"このグループの結果はありません。"));return}
-  const rows=G.rows,n=rows.length;
-  const q=curGroup==="ja"?state.qJa:state.qEn;
-  const h2=t=>el("h2",{style:"margin:10px 0 0;font:700 18px var(--font-display)"},t);
-  const analyzed=rows.filter(r=>r.ai);
-  const nonCeleb=rows.filter(r=>r.ai&&r.ai.type!=="D");
+  $("#csv").disabled=!has;$("#saveJson").disabled=!has;
+  if(!has){$("#critLine").textContent="";return}
+  const crit=(state.order==="viewCount"?"視聴回数順":"関連度順")+"・"+({"1":"直近1年","3":"直近3年","5":"直近5年"}[state.period]||"全期間");
+  $("#critLine").textContent=`${state.qJa} ／ ${state.qEn}・${crit}・${state.created.slice(0,10)}`;
+  const G=state.groups[F.group]||{rows:[]};const ai=hasAI(G);
+  const rowsT=G.rows.filter(matchTypes), rowsE=G.rows.filter(matchElems);
+  const shown=G.rows.filter(r=>matchTypes(r)&&matchElems(r));
 
-  // summary
-  v.append(el("div",{class:"note"},`検索語「${q}」／取得 ${n}本／${state.created.slice(0,16).replace("T"," ")} 時点`));
-  v.append(el("div",{class:"stats"},
-    stat("視聴回数 中央値",fmt(Math.round(median(rows.map(r=>r.views))))),
-    analyzed.length?stat("視聴回数 中央値（芸能人除く）",fmt(Math.round(median(nonCeleb.map(r=>r.views))))):null,
-    stat("登録者数 中央値",fmt(Math.round(median(rows.map(r=>r.subs))))),
-    stat("視聴回数÷登録者数 中央値",fmtR(median(rows.map(ratio)))),
-    stat("動画の長さ 中央値",fmtDur(Math.round(median(rows.map(r=>r.dur)))))));
-
-  if(analyzed.length){
-    // types with thumbnails
-    v.append(h2("類型"));
-    const tw=el("div",{class:"types"});
-    for(const k of TYPE_ORDER){
-      const rs=analyzed.filter(r=>r.ai.type===k).sort((a,b)=>b.views-a.views);
-      const box=el("div",{class:"type",style:`--c:${TYPES[k].c}`},
-        el("div",{class:"type-head"},
-          el("h3",{},el("span",{class:"pill",style:`--c:${TYPES[k].c}`},k),TYPES[k].name),
-          el("dl",{class:"kv"},
-            el("div",{},el("dt",{},"本数"),el("dd",{},`${rs.length}本（${Math.round(rs.length/analyzed.length*100)}%）`)),
-            rs.length?el("div",{},el("dt",{},"視聴回数 中央値"),el("dd",{},fmt(Math.round(median(rs.map(r=>r.views)))))):null,
-            rs.length?el("div",{},el("dt",{},"視聴÷登録 中央値"),el("dd",{},fmtR(median(rs.map(ratio))))):null)),
-        el("p",{},(G.ai?.type_traits?.[k])||(rs.length?"":"該当なし")));
-      if(rs.length)box.append(thumbGrid(rs));
-      tw.append(box);
+  /* aside */
+  const A=$("#filters");A.replaceChildren();
+  A.append(el("div",{},el("div",{class:"fh"},"グループ"),
+    el("div",{class:"seg"},["ja","en"].map(g=>el("button",{type:"button","aria-pressed":String(F.group===g),onclick:()=>{F.group=g;resetFilters();render()}},
+      (g==="ja"?"① 日本語 ":"② 英語 ")+(state.groups[g]?.rows.length||0))))));
+  if(ai){
+    A.append(el("div",{},el("div",{class:"fh"},el("span",{},"類型")),
+      TYPE_ORDER.map(k=>{const n=rowsE.filter(r=>r.ai?.type===k).length,on=F.types.has(k);
+        return el("label",{class:"tline"+(on?"":" off"),style:`--c:${TYPES[k].c}`,title:TYPES[k].def},
+          el("input",{type:"checkbox",...(on?{checked:""}:{}),onchange:e=>{e.target.checked?F.types.add(k):F.types.delete(k);render()}}),
+          el("span",{class:"dot"}),el("span",{class:"nm"},`${k} ${TYPES[k].name.replace(/（.*）/,"")}`),el("span",{class:"n"},n))})));
+    for(const [label,cat] of ELEM_CATS){
+      const base=G.rows.filter(r=>matchTypes(r)&&matchElems(r));
+      const cnt=countList(base.flatMap(r=>[...new Set(r.ai?.[cat]||[])]));
+      for(const [k,[c,name]] of F.elems)if(c===cat&&!cnt.some(([x])=>x===name))cnt.unshift([name,0]);
+      if(!cnt.length)continue;
+      A.append(el("div",{},el("div",{class:"fh"},label),
+        el("div",{class:"chips"},cnt.slice(0,14).map(([name,n])=>{const key=ekey(cat,name),on=F.elems.has(key);
+          return el("button",{type:"button",class:"chip","aria-pressed":String(on),onclick:()=>{on?F.elems.delete(key):F.elems.set(key,[cat,name]);render()}},name,el("span",{class:"n"},n))}))));
     }
-    v.append(tw);
-    v.append(el("p",{class:"note",style:"margin:0"},"サムネイルは視聴回数の多い順です。右下はA〜Cが視聴÷登録の倍率、Dが人物名です。"));
-
-    // common elements (location-specific only)
-    v.append(h2("共通要素"));
-    v.append(el("p",{class:"note",style:"margin:0"},"その土地ならではの要素のみを集計しています。2本以上に共通する要素はサムネイル付きで表示し、1本のみの要素は名前だけ示します。"));
-    const N=analyzed.length;
-    const cats=[["名所","landmarks"],["飲食物","food"],["その他の地域要素","local"]];
-    for(const [label,key] of cats){
-      const list=countList(analyzed.flatMap(r=>[...new Set(r.ai[key]||[])]));
-      const sec=el("div",{class:"elem-sec"},el("h3",{},label));
-      if(!list.length){sec.append(el("p",{class:"note",style:"margin:0"},"該当なし"));v.append(sec);continue}
-      const multi=list.filter(([,c])=>c>=2),single=list.filter(([,c])=>c<2);
-      for(const [name,c] of multi){
-        const rs=analyzed.filter(r=>(r.ai[key]||[]).includes(name)).sort((a,b)=>b.views-a.views);
-        const nc=rs.filter(r=>r.ai.type!=="D");
-        sec.append(el("div",{class:"elem"},
-          el("div",{class:"elem-head"},el("b",{},name),
-            el("dl",{class:"kv"},
-              el("div",{},el("dt",{},"本数"),el("dd",{},`${c}本（${Math.round(c/N*100)}%）`)),
-              el("div",{},el("dt",{},"視聴回数 中央値"),el("dd",{},fmt(Math.round(median(rs.map(r=>r.views)))))),
-              nc.length?el("div",{},el("dt",{},"視聴÷登録 中央値（芸能人除く）"),el("dd",{},fmtR(median(nc.map(ratio))))):null)),
-          thumbGrid(rs)));
-      }
-      if(single.length)sec.append(el("p",{class:"note",style:"margin:0"},"1本のみ："+single.map(([k])=>k).join("、")));
-      v.append(sec);
-    }
-    if(G.ai?.insights?.length){
-      v.append(h2("AIによる所見"));
-      v.append(el("ul",{class:"ins"},G.ai.insights.map(s=>el("li",{},s))));
-      v.append(el("p",{class:"note",style:"margin:0"},"所見と類型判定はAIの推定です。数値（登録者数・視聴回数）はYouTube APIの実測値です。"));
-    }
-  }else if($("#useAI").checked){
-    v.append(el("p",{class:"note"},"AI分析の結果はまだありません。"));
+    if(F.elems.size||F.types.size<4)A.append(el("button",{type:"button",class:"linkbtn",onclick:()=>{resetFilters();render()}},"絞り込みを解除"));
   }
 
-  // cards
-  const sk=sortKey[curGroup];
-  const sel=el("select",{id:"sortSel","aria-label":"並び順",onchange:e=>{sortKey[curGroup]=e.target.value;render()}},
-    [["rank","検索順位"],["views","視聴回数が多い順"],["subs","登録者数が多い順"],["ratio","視聴÷登録が高い順"],["published","新しい順"],["type","類型順"]].map(([k,l])=>{const o=el("option",{value:k},l);if(k===sk)o.selected=true;return o}));
-  v.append(el("div",{class:"listhead"},h2("動画一覧"),sel));
+  /* main */
+  const M=$("#gallery");M.replaceChildren();
+  const elNames=[...F.elems.values()].map(([,n])=>n);
+  const tNames=F.types.size===4?"":[...F.types].sort().join("・");
+  const title=[elNames.join(" × "),tNames&&("類型 "+tNames)].filter(Boolean).join(" × ")||"すべての動画";
+  const nc=shown.filter(r=>r.ai?.type!=="D");
+  const sel=el("select",{"aria-label":"並び順",onchange:e=>{F.sort=e.target.value;render()}},
+    [["views","視聴回数"],["ratio","視聴÷登録"],["subs","登録者数"],["published","新しい順"],["rank",state.order==="viewCount"?"取得順":"検索順位"]].map(([k,l])=>{const o=el("option",{value:k},l);if(k===F.sort)o.selected=true;return o}));
+  M.append(el("div",{class:"mhead"},el("h2",{},title),
+    el("span",{},"表示",el("b",{},shown.length),` / ${G.rows.length}本`),
+    el("span",{},"視聴中央値",el("b",{},shown.length?fmt(Math.round(median(shown.map(r=>r.views)))):"—")),
+    el("span",{},"視聴÷登録"+(ai?"（芸能人除く）":""),el("b",{},fmtR(median((ai?nc:shown).map(ratio))))),
+    el("label",{class:"sort"},"並び順",sel)));
+
+  /* insight */
+  const ins=insightBox(G,shown);if(ins)M.append(ins);
+
+  /* cards */
   const val=(r,k)=>k==="ratio"?(ratio(r)??-1):k==="subs"?(r.subs??-1):r[k];
-  const sorted=[...rows].sort((a,b)=>{
-    if(sk==="rank")return a.rank-b.rank;
-    if(sk==="type"){const x=r=>r.ai?TYPE_ORDER.indexOf(r.ai.type):9;return x(a)-x(b)||a.rank-b.rank}
-    const x=val(a,sk),y=val(b,sk);return x>y?-1:x<y?1:0});
-  v.append(el("div",{class:"cards"},sorted.map(r=>{
-    const url="https://www.youtube.com/watch?v="+r.id,a=r.ai;
-    const elText=a?[a.celebrity,...(a.landmarks||[]),...(a.food||[]),...(a.local||[]),a.text_words?"「"+a.text_words+"」":"",a.hook?"フック:"+a.hook:""].filter(Boolean).join("・"):"";
-    return el("div",{class:"card"},
-      el("a",{class:"img",href:url,target:"_blank",rel:"noopener"},
-        el("img",{src:r.thumb,alt:"",loading:"lazy"}),
-        el("span",{class:"rk"},"#"+r.rank),
-        a?el("span",{class:"tp pill",style:`--c:${TYPES[a.type]?.c||"var(--muted)"}`},a.type):null,
-        el("span",{class:"du"},fmtDur(r.dur))),
-      el("a",{class:"tt",href:url,target:"_blank",rel:"noopener",title:r.title},r.title),
-      el("div",{class:"ch",title:r.channel},r.channel+(r.country?`（${r.country}）`:"")),
-      el("div",{class:"nums"},
-        el("span",{},"登録 ",el("b",{},fmt(r.subs))),
-        el("span",{},"視聴 ",el("b",{},fmt(r.views))),
-        el("span",{},"倍率 ",el("b",{},fmtR(ratio(r)))),
-        el("span",{},r.published)),
-      elText?el("div",{class:"el"},elText):null);
-  })));
+  const sorted=[...shown].sort((a,b)=>{if(F.sort==="rank")return a.rank-b.rank;const x=val(a,F.sort),y=val(b,F.sort);return x>y?-1:x<y?1:0});
+  if(!sorted.length){M.append(el("div",{class:"none"},"条件に合う動画はありません。絞り込みを変えてください。"));return}
+  M.append(el("div",{class:"grid"},sorted.map(card)));
 }
-function thumbGrid(rs){
-  return el("div",{class:"thumbs"},rs.map(r=>{const t=r.ai?.type;
-    return el("a",{class:"thumb",href:"https://www.youtube.com/watch?v="+r.id,target:"_blank",rel:"noopener",title:r.title+"\n"+r.channel},
-      el("img",{src:r.thumb,alt:r.title,loading:"lazy"}),
+function card(r){
+  const url="https://www.youtube.com/watch?v="+r.id,a=r.ai;
+  const tags=a?[a.celebrity,...(a.landmarks||[]),...(a.food||[]),...(a.local||[])].filter(Boolean).join("・"):"";
+  return el("div",{class:"card"},
+    el("a",{class:"img",href:url,target:"_blank",rel:"noopener"},
+      el("img",{src:r.thumb,alt:"",loading:"lazy"}),
       el("span",{class:"rk"},"#"+r.rank),
-      t?el("span",{class:"tp pill",style:`--c:${TYPES[t]?.c||"var(--muted)"}`},t):null,
-      el("span",{class:"ov"},el("span",{},fmt(r.views)+"回"),el("span",{},t==="D"?(r.ai.celebrity||r.channel):fmtR(ratio(r)))))}));
+      a?el("span",{class:"tp",style:`--c:${TYPES[a.type]?.c||"var(--muted)"}`,title:TYPES[a.type]?.name||""},a.type):null,
+      el("span",{class:"du"},fmtDur(r.dur))),
+    el("a",{class:"tt",href:url,target:"_blank",rel:"noopener",title:r.title},r.title),
+    el("div",{class:"meta"},el("span",{},el("b",{},fmt(r.views)),"回"),el("span",{},el("b",{},fmtR(ratio(r)))),el("span",{},"登録",el("b",{},fmt(r.subs))),el("span",{},r.published)),
+    el("div",{class:"ch",title:r.channel},r.channel),
+    tags?el("div",{class:"tags"},tags):null);
 }
-function stat(l,b){return el("div",{class:"stat"},el("b",{},b),el("span",{},l))}
+function filterKey(){return JSON.stringify([F.group,[...F.types].sort(),[...F.elems.keys()].sort()])}
+function insightBox(G,shown){
+  if(!G.ai)return null;
+  const allTypes=F.types.size===4,noEl=!F.elems.size;
+  if(allTypes&&noEl){
+    const list=G.ai.insights||[];if(!list.length)return null;
+    const box=el("div",{class:"ins"},el("div",{class:"lbl"},"AI所見"),el("ul",{},list.slice(0,2).map(s=>el("li",{},s))));
+    if(list.length>2)box.append(el("details",{},el("summary",{},`残り${list.length-2}件を表示`),el("ul",{style:"margin-top:4px"},list.slice(2).map(s=>el("li",{},s)))));
+    return box;
+  }
+  if(F.types.size===1&&noEl){
+    const k=[...F.types][0],t=G.ai.type_traits?.[k];
+    return el("div",{class:"ins"},el("div",{class:"lbl"},`${k} ${TYPES[k].name}`),el("div",{},t||TYPES[k].def));
+  }
+  const key=filterKey();G.ai.sub=G.ai.sub||{};
+  const cached=G.ai.sub[key];
+  const box=el("div",{class:"ins"},el("div",{class:"lbl"},"この絞り込みのAI所見"));
+  if(cached){box.append(el("div",{},cached));return box}
+  if(shown.length<2){box.append(el("div",{class:"muted"},"2本以上で所見を作成できます。"));return box}
+  const b=el("button",{type:"button",class:"btn",onclick:async()=>{
+    b.disabled=true;b.textContent="作成中…（10〜30秒）";
+    try{G.ai.sub[key]=await subInsight(F.group,shown);render()}
+    catch(e){b.disabled=false;b.textContent="この絞り込みの所見を作成";box.append(el("div",{style:"color:var(--err);margin-top:6px"},e.message))}
+  }},"この絞り込みの所見を作成");
+  box.append(b);return box;
+}
+const SUB_SCHEMA={type:"object",additionalProperties:false,required:["insight"],properties:{insight:{type:"string",description:"2文以内の所見"}}};
+async function subInsight(group,rows){
+  const all=state.groups[group].rows;
+  const data=rows.map(r=>({順位:r.rank,類型:r.ai?.type,タイトル:r.title,視聴回数:r.views,視聴登録比:ratio(r)?+ratio(r).toFixed(2):null,名所:r.ai?.landmarks,飲食物:r.ai?.food,地域要素:r.ai?.local,サムネ文字:r.ai?.text_words,フック:r.ai?.hook}));
+  const text=`YouTubeのVLOGサムネイル分析です。グループ全${all.length}本（視聴回数中央値 ${fmt(Math.round(median(all.map(r=>r.views))))}、視聴÷登録中央値 ${fmtR(median(all.map(ratio)))}）のうち、次の条件で絞り込んだ${rows.length}本のデータを示します。
+類型の定義:
+${typeDefs()}
+
+この絞り込みの動画に共通する特徴と、グループ全体と比べた視聴回数・視聴÷登録の傾向を、2文以内で述べてください。数値の根拠を添え、推測は推測と分かる表現にしてください。芸能人（D）の動画は知名度で視聴される点に注意してください。
+
+データ:
+${JSON.stringify(data)}`;
+  return (await callClaude([{type:"text",text}],SUB_SCHEMA,8000)).insight;
+}
 function countList(arr){const m=new Map();for(const x of arr){const k=String(x).trim();if(k)m.set(k,(m.get(k)||0)+1)}return[...m].sort((a,b)=>b[1]-a[1])}
-function barBlock(title,list,N,limit){
-  const box=el("div",{},el("h4",{},title));
-  if(!list.length){box.append(el("div",{class:"note"},"該当なし"));return box}
-  for(const [k,c] of list.slice(0,limit||list.length))
-    box.append(el("div",{class:"bar"},el("span",{class:"lab",title:k},k),el("span",{class:"trk"},el("span",{class:"fill",style:`width:${c/N*100}%;display:block`})),el("span",{class:"n"},`${c}本`)));
-  return box;
-}
 
 /* ---------- export / import ---------- */
 function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
@@ -513,7 +513,7 @@ $("#csv").addEventListener("click",()=>{
 $("#saveJson").addEventListener("click",()=>download("thumbnail_"+slug()+".json",JSON.stringify(state),"application/json"));
 $("#loadJson").addEventListener("change",async e=>{
   const f=e.target.files[0];if(!f)return;
-  try{const d=JSON.parse(await f.text());if(!d.groups)throw 0;state=d;curGroup="ja";$("#qJa").value=d.qJa||"";$("#qEn").value=d.qEn||"";render();log(`「${f.name}」を開きました。`,"o")}
+  try{const d=JSON.parse(await f.text());if(!d.groups)throw 0;state=d;F.group="ja";resetFilters();$("#qJa").value=d.qJa||"";$("#qEn").value=d.qEn||"";render();log(`「${f.name}」を開きました。`,"o");$("#settings").hidden=true;$("#toggleSettings").setAttribute("aria-expanded","false")}
   catch{log("このファイルは読み込めません。このツールで保存したJSONを選んでください。","e")}
   e.target.value="";
 });
