@@ -101,6 +101,13 @@ main{flex:999 1 640px;min-width:0;display:grid;gap:16px;align-content:start}
 .card .ch{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .tags{font-size:11px;color:var(--muted)}
 .none{color:var(--muted);padding:40px 0}
+.tgroup{display:grid;gap:12px;padding-top:6px}
+.tgroup+.tgroup{border-top:1px solid var(--line);padding-top:20px;margin-top:6px}
+.tghead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 20px;font-size:12px;color:var(--muted)}
+.tghead .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.tghead .tname{display:flex;align-items:center;gap:8px}
+.tghead h3{margin:0;font-size:15px;color:var(--ink)}
+.tghead b{font-family:var(--font-mono);font-size:14px;color:var(--ink);font-weight:700;margin:0 2px 0 4px}
 </style>
 </head>
 <body>
@@ -125,6 +132,7 @@ main{flex:999 1 640px;min-width:0;display:grid;gap:16px;align-content:start}
     </div>
     <div class="row">
       <button class="btn primary" id="run">分析を実行</button>
+      <button class="btn" id="stop" hidden>中止</button>
       <button class="btn" id="csv" disabled>CSVで保存</button>
       <button class="btn" id="saveJson" disabled>結果を保存</button>
       <label class="linkbtn" for="loadJson">保存した結果を開く<input type="file" id="loadJson" accept="application/json" hidden></label>
@@ -171,7 +179,8 @@ const TYPES={
 const TYPE_ORDER=["A","B","C","D"];
 const KANA=/[぀-ヿ]/;
 const NON_LATIN=/[぀-ヿ㐀-鿿가-힯Ѐ-ӿ؀-ۿ฀-๿ऀ-ॿ]/;
-let state=null;
+let state=null, runCtl=null;
+const aborted=()=>!!runCtl?.signal.aborted;
 
 /* ---------- keys ---------- */
 function store(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
@@ -204,7 +213,7 @@ async function yt(path,params){
   const u=new URL("https://www.googleapis.com/youtube/v3/"+path);
   for(const k in params)if(params[k]!=null&&params[k]!=="")u.searchParams.set(k,params[k]);
   u.searchParams.set("key",$("#ytKey").value.trim());
-  const r=await fetch(u);const j=await r.json().catch(()=>({}));
+  const r=await fetch(u,{signal:runCtl?.signal});const j=await r.json().catch(()=>({}));
   if(!r.ok){const reason=j?.error?.errors?.[0]?.reason||"";const msg=j?.error?.message||r.status;
     if(reason==="quotaExceeded")throw new Error("YouTube APIの1日の使用上限に達しました。翌日（日本時間17時頃）にリセットされます。");
     if(reason==="keyInvalid"||/API key not valid/.test(msg))throw new Error("YouTube APIキーが無効です。キーを確認してください。");
@@ -258,7 +267,7 @@ async function collect(group,q,need){
 const AI_MODEL="claude-sonnet-5-5", BATCH=15;
 function typeDefs(){return TYPE_ORDER.map(k=>`${k} ${TYPES[k].name}: ${TYPES[k].def}`).join("\n")}
 async function callClaude(content,schema,maxTokens){
-  const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{
+  const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",signal:runCtl?.signal,headers:{
     "content-type":"application/json","x-api-key":$("#anKey").value.trim(),"anthropic-version":"2023-06-01",
     "anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens,output_config:{format:{type:"json_schema",schema}},messages:[{role:"user",content}]})});
@@ -335,13 +344,13 @@ async function analyze(group,rows){
     const slice=rows.slice(b*BATCH,(b+1)*BATCH);
     log(`  ${b+1}/${total} 分析中（#${b*BATCH+1}〜#${b*BATCH+slice.length}）…`);
     try{const n=await analyzeBatch(group,slice,b*BATCH);if(n<slice.length)log(`    ${slice.length-n}本の結果が欠けています。`,"e")}
-    catch(e){failed++;log("    "+e.message,"e")}
+    catch(e){if(aborted())throw e;failed++;log("    "+e.message,"e")}
     render();
   }
   if(!rows.some(r=>r.ai))throw new Error("分類結果を取得できませんでした。");
   log("  全体の傾向をまとめています…");
   try{return await summarize(group,rows)}
-  catch(e){log("    所見の作成に失敗: "+e.message,"e");return {type_traits:{},insights:[]}}
+  catch(e){if(aborted())throw e;log("    所見の作成に失敗: "+e.message,"e");return {type_traits:{},insights:[]}}
 }
 
 /* ---------- run ---------- */
@@ -351,7 +360,8 @@ $("#run").addEventListener("click",async()=>{
   if(useAI&&!$("#anKey").value.trim()){log("AI分析にはAnthropic APIキーが必要です。キーを入力するか、AI分析のチェックを外してください。","e");$("#keysPanel").open=true;$("#anKey").focus();return}
   persistKeys();
   const need=Math.max(5,Math.min(50,+$("#count").value||30));
-  $("#run").disabled=true;$("#log").textContent="";
+  runCtl=new AbortController();
+  $("#run").disabled=true;$("#stop").hidden=false;$("#stop").disabled=false;$("#log").textContent="";
   const next={created:new Date().toISOString(),qJa:$("#qJa").value.trim(),qEn:$("#qEn").value.trim(),order:$("#order").value,period:$("#period").value,groups:{}};
   try{
     for(const g of ["ja","en"]){
@@ -368,15 +378,23 @@ $("#run").addEventListener("click",async()=>{
         const rows=state.groups[g].rows;if(!rows.length)continue;
         log(`${g==="ja"?"①":"②"} サムネイルをAIで分析中…（${Math.ceil(rows.length/BATCH)}回に分けて実行、1回30秒〜1分）`);
         try{state.groups[g].ai=await analyze(g,rows);log("  完了","o")}
-        catch(e){log("  "+e.message,"e")}
+        catch(e){if(aborted())throw e;log("  "+e.message,"e")}
         render();
       }
     }
     log("完了しました。","o");
     if(state){$("#settings").hidden=true;$("#toggleSettings").setAttribute("aria-expanded","false")}
-  }catch(e){log(e.message,"e")}
-  finally{$("#run").disabled=false}
+  }catch(e){
+    if(aborted()){
+      if(!state&&Object.values(next.groups).some(G=>G.rows.length)){state=next;resetFilters();F.group="ja"}
+      if(state)for(const G of Object.values(state.groups))if(!G.ai&&G.rows.some(r=>r.ai))G.ai={type_traits:{},insights:[]};
+      render();
+      log(state?"中止しました。ここまでの結果を表示しています。":"中止しました。","e");
+    }else log(e.message,"e");
+  }
+  finally{$("#run").disabled=false;$("#stop").hidden=true;runCtl=null}
 });
+$("#stop").addEventListener("click",()=>{if(runCtl){runCtl.abort();$("#stop").disabled=true;log("中止しています…")}});
 
 /* ---------- view ---------- */
 const F={group:"ja",types:new Set(TYPE_ORDER),elems:new Map(),sort:"views"};
@@ -441,7 +459,17 @@ function render(){
   const val=(r,k)=>k==="ratio"?(ratio(r)??-1):k==="subs"?(r.subs??-1):r[k];
   const sorted=[...shown].sort((a,b)=>{if(F.sort==="rank")return a.rank-b.rank;const x=val(a,F.sort),y=val(b,F.sort);return x>y?-1:x<y?1:0});
   if(!sorted.length){M.append(el("div",{class:"none"},"条件に合う動画はありません。絞り込みを変えてください。"));return}
-  M.append(el("div",{class:"grid"},sorted.map(card)));
+  const groups=[...TYPE_ORDER.filter(k=>F.types.has(k)),"?"].map(k=>[k,sorted.filter(r=>(r.ai?.type||"?")===k)]).filter(([,rs])=>rs.length);
+  if(groups.length===1&&groups[0][0]==="?"){M.append(el("div",{class:"grid"},sorted.map(card)));return}
+  for(const [k,rs] of groups){
+    const t=TYPES[k],nc2=rs.filter(r=>r.ai?.type!=="D");
+    M.append(el("section",{class:"tgroup",style:`--c:${t?.c||"var(--muted)"}`},
+      el("div",{class:"tghead"},el("span",{class:"tname"},el("span",{class:"dot"}),el("h3",{},t?`${k} ${t.name.replace(/（.*）/,"")}`:"未分類")),
+        el("span",{},el("b",{},rs.length),"本"),
+        el("span",{},"視聴中央値",el("b",{},fmt(Math.round(median(rs.map(r=>r.views)))))),
+        k!=="D"?el("span",{},"視聴÷登録",el("b",{},fmtR(median(nc2.map(ratio))))):null),
+      el("div",{class:"grid"},rs.map(card))));
+  }
 }
 function card(r){
   const url="https://www.youtube.com/watch?v="+r.id,a=r.ai;
