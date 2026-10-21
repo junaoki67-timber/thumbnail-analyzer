@@ -45,6 +45,8 @@ label.f input,label.f select{background:var(--bg);border:1px solid var(--line2);
 details.keys summary{cursor:pointer;font-size:13px;color:var(--sub)}
 details.keys .fields{margin-top:10px}
 .note{font-size:12px;color:var(--muted)}
+label.f input:disabled{opacity:.4}
+label.f input::placeholder{color:#5c5c63}
 #log{font:12px/1.7 var(--font-mono);color:var(--muted);white-space:pre-wrap;max-height:150px;overflow:auto;margin:0}
 #log:empty{display:none}
 #log .e{color:var(--err)} #log .o{color:var(--ok)}
@@ -117,8 +119,8 @@ main{flex:999 1 640px;min-width:0;display:grid;gap:16px;align-content:start}
 <section class="settings" id="settings">
   <div class="wrap">
     <div class="fields">
-      <label class="f" for="qJa">① 日本語キーワード<input type="text" id="qJa" value="ベルリン vlog"></label>
-      <label class="f" for="qEn">② 英語キーワード<input type="text" id="qEn" value="Berlin vlog"></label>
+      <label class="f" for="qJa">① 日本語キーワード<input type="text" id="qJa" value="" placeholder="例：ベルリン vlog" autocomplete="off"></label>
+      <label class="f" for="qEn"><span class="row" style="gap:8px"><span>② 英語キーワード</span><span class="check" style="font-size:12px"><input type="checkbox" id="useEn" checked aria-label="英語でも検索する"> 検索する</span></span><input type="text" id="qEn" value="" placeholder="例：Berlin vlog" autocomplete="off"></label>
       <label class="f" for="count">各グループの件数<input type="number" id="count" value="30" min="5" max="50"></label>
       <label class="f" for="order">動画の選び方<select id="order"><option value="viewCount" selected>視聴回数の多い順</option><option value="relevance">関連度順（YouTube検索の表示に近い）</option></select></label>
       <label class="f" for="period">公開時期<select id="period"><option value="">全期間</option><option value="1">直近1年</option><option value="3" selected>直近3年</option><option value="5">直近5年</option></select></label>
@@ -355,13 +357,17 @@ $("#run").addEventListener("click",async()=>{
   if(!$("#ytKey").value.trim()){log("YouTube APIキーを入力してください。","e");$("#keysPanel").open=true;$("#ytKey").focus();return}
   const useAI=$("#useAI").checked;
   if(useAI&&!$("#anKey").value.trim()){log("AI分析にはAnthropic APIキーが必要です。キーを入力するか、AI分析のチェックを外してください。","e");$("#keysPanel").open=true;$("#anKey").focus();return}
+  const useEn=$("#useEn").checked;
+  if(!$("#qJa").value.trim()){log("① 日本語キーワードを入力してください。","e");$("#qJa").focus();return}
+  if(useEn&&!$("#qEn").value.trim()){log("② 英語キーワードを入力するか、「検索する」のチェックを外してください。","e");$("#qEn").focus();return}
   persistKeys();
+  const groupsToRun=useEn?["ja","en"]:["ja"];
   const need=Math.max(5,Math.min(50,+$("#count").value||30));
   runCtl=new AbortController();
   $("#run").disabled=true;$("#stop").hidden=false;$("#stop").disabled=false;$("#log").textContent="";
-  const next={created:new Date().toISOString(),qJa:$("#qJa").value.trim(),qEn:$("#qEn").value.trim(),order:$("#order").value,period:$("#period").value,groups:{}};
+  const next={created:new Date().toISOString(),qJa:$("#qJa").value.trim(),qEn:useEn?$("#qEn").value.trim():"",order:$("#order").value,period:$("#period").value,groups:{}};
   try{
-    for(const g of ["ja","en"]){
+    for(const g of groupsToRun){
       const q=g==="ja"?next.qJa:next.qEn;
       log(`${g==="ja"?"①":"②"}「${q}」を検索中…`);
       const rows=await collect(g,q,need);
@@ -371,7 +377,7 @@ $("#run").addEventListener("click",async()=>{
     }
     state=next;resetFilters();F.group="ja";render();
     if(useAI){
-      for(const g of ["ja","en"]){
+      for(const g of groupsToRun){
         const rows=state.groups[g].rows;if(!rows.length)continue;
         log(`${g==="ja"?"①":"②"} サムネイルをAIで分析中…（${Math.ceil(rows.length/BATCH)}回に分けて実行、1回30秒〜1分）`);
         try{state.groups[g].ai=await analyze(g,rows);log("  完了","o")}
@@ -398,6 +404,8 @@ const F={group:"ja",types:new Set(TYPE_ORDER),elems:new Map(),sort:"views"};
 const ELEM_CATS=[["名所","landmarks"],["飲食物","food"],["地域要素","local"]];
 const ekey=(cat,name)=>cat+"\u0001"+name;
 function resetFilters(){F.types=new Set(TYPE_ORDER);F.elems=new Map()}
+function syncEn(){$("#qEn").disabled=!$("#useEn").checked}
+$("#useEn").addEventListener("change",syncEn);syncEn();
 $("#toggleSettings").addEventListener("click",()=>{const s=$("#settings");s.hidden=!s.hidden;$("#toggleSettings").setAttribute("aria-expanded",String(!s.hidden))});
 function hasAI(G){return G.rows.some(r=>r.ai)}
 function matchElems(r){for(const [k,[cat,name]] of F.elems){if(!(r.ai?.[cat]||[]).includes(name))return false}return true}
@@ -407,15 +415,15 @@ function render(){
   $("#csv").disabled=!has;$("#saveJson").disabled=!has;
   if(!has){$("#critLine").textContent="";return}
   const crit=(state.order==="viewCount"?"視聴回数順":"関連度順")+"・"+({"1":"直近1年","3":"直近3年","5":"直近5年"}[state.period]||"全期間");
-  $("#critLine").textContent=`${state.qJa} ／ ${state.qEn}・${crit}・${state.created.slice(0,10)}`;
+  $("#critLine").textContent=`${[state.qJa,state.groups.en?state.qEn:""].filter(Boolean).join(" ／ ")}・${crit}・${state.created.slice(0,10)}`;
   const G=state.groups[F.group]||{rows:[]};const ai=hasAI(G);
   const rowsT=G.rows.filter(matchTypes), rowsE=G.rows.filter(matchElems);
   const shown=G.rows.filter(r=>matchTypes(r)&&matchElems(r));
 
   /* aside */
   const A=$("#filters");A.replaceChildren();
-  A.append(el("div",{},el("div",{class:"fh"},"グループ"),
-    el("div",{class:"seg"},["ja","en"].map(g=>el("button",{type:"button","aria-pressed":String(F.group===g),onclick:()=>{F.group=g;resetFilters();render()}},
+  if(Object.keys(state.groups).length>1)A.append(el("div",{},el("div",{class:"fh"},"グループ"),
+    el("div",{class:"seg"},["ja","en"].filter(g=>state.groups[g]).map(g=>el("button",{type:"button","aria-pressed":String(F.group===g),onclick:()=>{F.group=g;resetFilters();render()}},
       (g==="ja"?"① 日本語 ":"② 英語 ")+(state.groups[g]?.rows.length||0))))));
   if(ai){
     A.append(el("div",{},el("div",{class:"fh"},el("span",{},"類型")),
@@ -536,7 +544,7 @@ $("#csv").addEventListener("click",()=>{
 $("#saveJson").addEventListener("click",()=>download("thumbnail_"+slug()+".json",JSON.stringify(state),"application/json"));
 $("#loadJson").addEventListener("change",async e=>{
   const f=e.target.files[0];if(!f)return;
-  try{const d=JSON.parse(await f.text());if(!d.groups)throw 0;state=d;F.group="ja";resetFilters();$("#qJa").value=d.qJa||"";$("#qEn").value=d.qEn||"";render();log(`「${f.name}」を開きました。`,"o");$("#settings").hidden=true;$("#toggleSettings").setAttribute("aria-expanded","false")}
+  try{const d=JSON.parse(await f.text());if(!d.groups)throw 0;state=d;F.group="ja";resetFilters();$("#qJa").value=d.qJa||"";$("#qEn").value=d.qEn||"";$("#useEn").checked=!!d.groups.en;syncEn();render();log(`「${f.name}」を開きました。`,"o");$("#settings").hidden=true;$("#toggleSettings").setAttribute("aria-expanded","false")}
   catch{log("このファイルは読み込めません。このツールで保存したJSONを選んでください。","e")}
   e.target.value="";
 });
