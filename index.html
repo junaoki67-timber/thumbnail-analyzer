@@ -79,7 +79,8 @@ main{flex:999 1 640px;min-width:0;display:grid;gap:16px;align-content:start}
 .mhead b{font-family:var(--font-mono);font-size:15px;color:var(--ink);font-weight:700;margin-left:4px}
 .mhead select{margin-left:6px;background:var(--panel);border:1px solid var(--line2);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--ink)}
 .mhead .sort{margin-left:auto}
-.ins{padding:12px 16px;background:var(--panel);border-radius:8px;font-size:13px;color:#cfcfd4;line-height:1.7}
+.stick{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;gap:12px;padding:12px 0;margin-top:-12px;border-bottom:1px solid var(--line)}
+.ins{max-height:30vh;overflow:auto;padding:12px 16px;background:var(--panel);border-radius:8px;font-size:13px;color:#cfcfd4;line-height:1.7}
 .ins ul{margin:0;padding-left:1.1em;display:grid;gap:4px}
 .ins .lbl{font-size:11px;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
 .ins details summary{cursor:pointer;color:var(--sub);font-size:12px;margin-top:6px}
@@ -442,14 +443,15 @@ function render(){
   const nc=shown.filter(r=>r.ai?.type!=="D");
   const sel=el("select",{"aria-label":"並び順",onchange:e=>{F.sort=e.target.value;render()}},
     [["views","視聴回数"],["ratio","視聴÷登録"],["subs","登録者数"],["published","新しい順"],["rank",state.order==="viewCount"?"取得順":"検索順位"]].map(([k,l])=>{const o=el("option",{value:k},l);if(k===F.sort)o.selected=true;return o}));
-  M.append(el("div",{class:"mhead"},el("h2",{},title),
+  const stick=el("div",{class:"stick"});M.append(stick);
+  stick.append(el("div",{class:"mhead"},el("h2",{},title),
     el("span",{},"表示",el("b",{},shown.length),` / ${G.rows.length}本`),
     el("span",{},"視聴中央値",el("b",{},shown.length?fmt(Math.round(median(shown.map(r=>r.views)))):"—")),
     el("span",{},"視聴÷登録"+(ai?"（芸能人除く）":""),el("b",{},fmtR(median((ai?nc:shown).map(ratio))))),
     el("label",{class:"sort"},"並び順",sel)));
 
   /* insight */
-  const ins=insightBox(G,shown);if(ins)M.append(ins);
+  const ins=insightBox(G,shown);if(ins)stick.append(ins);
 
   /* cards */
   const val=(r,k)=>k==="ratio"?(ratio(r)??-1):k==="subs"?(r.subs??-1):r[k];
