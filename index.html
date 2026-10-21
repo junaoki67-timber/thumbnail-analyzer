@@ -257,23 +257,24 @@ async function collect(group,q,need){
 /* ---------- Claude ---------- */
 const AI_MODEL="claude-sonnet-5-5", BATCH=15;
 function typeDefs(){return TYPE_ORDER.map(k=>`${k} ${TYPES[k].name}: ${TYPES[k].def}`).join("\n")}
-async function callClaude(content,tool,maxTokens){
+async function callClaude(content,schema,maxTokens){
   const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{
     "content-type":"application/json","x-api-key":$("#anKey").value.trim(),"anthropic-version":"2023-06-01",
     "anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens,tools:[tool],tool_choice:{type:"tool",name:tool.name},messages:[{role:"user",content}]})});
+    body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens,output_config:{format:{type:"json_schema",schema}},messages:[{role:"user",content}]})});
   const j=await res.json().catch(()=>({}));
   if(!res.ok){const m=j?.error?.message||res.status;
     if(res.status===401)throw new Error("Anthropic APIキーが無効です。");
     if(/credit balance/i.test(m))throw new Error("Anthropic APIのクレジット残高が不足しています。");
+    if(/usage limits/i.test(m))throw new Error("Anthropic APIの利用上限額に達しています。コンソールの「Limits」で上限額を確認してください。");
     if(res.status===429||res.status===529)throw new Error("Anthropic APIが混み合っています。少し待ってから再実行してください。");
     throw new Error("Anthropic API エラー: "+m)}
   if(j.stop_reason==="max_tokens")throw new Error("AIの回答が長すぎて途中で切れました。");
-  const tu=(j.content||[]).find(b=>b.type==="tool_use");
-  if(!tu)throw new Error("AIの回答を読み取れませんでした。");
-  return tu.input;
+  if(j.stop_reason==="refusal")throw new Error("AIがこの内容の分析を断りました。");
+  const txt=(j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+  try{return JSON.parse(txt)}catch{throw new Error("AIの回答を読み取れませんでした。")}
 }
-const VIDEO_TOOL={name:"report_videos",description:"各サムネイルの分類結果を報告する",input_schema:{type:"object",required:["videos"],properties:{videos:{type:"array",items:{type:"object",required:["i","type","design","celebrity","landmarks","food","local","text_words","hook"],properties:{
+const VIDEO_SCHEMA={type:"object",additionalProperties:false,required:["videos"],properties:{videos:{type:"array",items:{type:"object",additionalProperties:false,required:["i","type","design","celebrity","landmarks","food","local","text_words","hook"],properties:{
   i:{type:"integer",description:"動画番号"},
   type:{type:"string",enum:["A","B","C","D"]},
   design:{type:"string",enum:["A","B","C"],description:"サムネイルのデザインだけで見た類型"},
@@ -282,13 +283,13 @@ const VIDEO_TOOL={name:"report_videos",description:"各サムネイルの分類�
   food:{type:"array",items:{type:"string"},description:"写っている飲食物の種類（日本語の一般名）"},
   local:{type:"array",items:{type:"string"},description:"名所・飲食物以外の、その土地・国ならではの要素"},
   text_words:{type:"string",description:"サムネ内の主な文字を15字以内で。なければ空文字"},
-  hook:{type:"string",description:"Cの根拠となるギャップ/感情ワード。なければ空文字"}}}}}}};
+  hook:{type:"string",description:"Cの根拠となるギャップ/感情ワード。なければ空文字"}}}}}};
 async function analyzeBatch(group,rows,offset){
   const who=group==="ja"?"日本人クリエイターの日本語VLOG":"英語圏クリエイターの英語VLOG";
   const q=$(group==="ja"?"#qJa":"#qEn").value;
   const content=[{type:"text",text:`あなたはYouTubeサムネイルのデザイン分析者です。以下は「${q}」で検索した${who}のサムネイル${rows.length}枚です。各画像の直前に番号・タイトル・チャンネル名を示します。
 
-各動画を次の4類型のうち1つに分類し、要素を抽出して report_videos ツールで全${rows.length}本分を報告してください。
+各動画を次の4類型のうち1つに分類し、要素を抽出し、全${rows.length}本分をJSONで報告してください（i は各画像の直前に示した番号）。
 ${typeDefs()}
 
 判定手順:
@@ -303,14 +304,14 @@ ${typeDefs()}
 - 該当がなければ空配列。`}];
   rows.forEach((r,i)=>{content.push({type:"text",text:`#${offset+i+1} タイトル: ${r.title} / チャンネル: ${r.channel}`});
     content.push({type:"image",source:{type:"url",url:`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`}})});
-  const out=await callClaude(content,VIDEO_TOOL,6000);
+  const out=await callClaude(content,VIDEO_SCHEMA,6000);
   let n=0;
   for(const v of out.videos||[]){const r=rows[(+v.i)-offset-1];if(r){r.ai=v;n++}}
   return n;
 }
-const SUMMARY_TOOL={name:"report_summary",description:"グループ全体の傾向を報告する",input_schema:{type:"object",required:["type_traits","insights"],properties:{
-  type_traits:{type:"object",properties:{A:{type:"string"},B:{type:"string"},C:{type:"string"},D:{type:"string"}},description:"各類型に共通する特徴を1文ずつ。該当0本の類型は空文字"},
-  insights:{type:"array",items:{type:"string"},description:"グループ全体の傾向・共通点・差別化余地を3〜5項目、各1文"}}}};
+const SUMMARY_SCHEMA={type:"object",additionalProperties:false,required:["type_traits","insights"],properties:{
+  type_traits:{type:"object",additionalProperties:false,required:["A","B","C","D"],properties:{A:{type:"string"},B:{type:"string"},C:{type:"string"},D:{type:"string"}},description:"各類型に共通する特徴を1文ずつ。該当0本の類型は空文字"},
+  insights:{type:"array",items:{type:"string"},description:"グループ全体の傾向・共通点・差別化余地を3〜5項目、各1文"}}};
 async function summarize(group,rows){
   const who=group==="ja"?"日本人クリエイターの日本語VLOG":"英語圏クリエイターの英語VLOG";
   const data=rows.filter(r=>r.ai).map(r=>({順位:r.rank,類型:r.ai.type,タイトル:r.title,チャンネル:r.channel,登録者数:r.subs,視聴回数:r.views,視聴登録比:ratio(r)?+ratio(r).toFixed(2):null,名所:r.ai.landmarks,飲食物:r.ai.food,地域要素:r.ai.local,サムネ文字:r.ai.text_words,フック:r.ai.hook,芸能人:r.ai.celebrity}));
@@ -318,14 +319,14 @@ async function summarize(group,rows){
 類型の定義:
 ${typeDefs()}
 
-report_summary ツールで、各類型の共通する特徴（type_traits）と、グループ全体の所見（insights）を報告してください。
+JSONで、各類型の共通する特徴（type_traits）と、グループ全体の所見（insights）を報告してください。
 - 所見は数値（視聴回数・視聴登録比）の根拠を添える。
 - Dの動画は知名度で視聴されるため、サムネイルの効果を論じる際はD以外を中心に述べる。
 - 推測は推測と分かる表現にする。
 
 データ:
 ${JSON.stringify(data)}`;
-  return await callClaude([{type:"text",text}],SUMMARY_TOOL,3000);
+  return await callClaude([{type:"text",text}],SUMMARY_SCHEMA,3000);
 }
 async function analyze(group,rows){
   rows.forEach(r=>delete r.ai);
